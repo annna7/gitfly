@@ -1,9 +1,10 @@
 package gitfly;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
-import static gitfly.Utils.getSHA1;
+import static gitfly.Utils.*;
 
 public class Commit {
     private String message;
@@ -28,7 +29,21 @@ public class Commit {
         String commit = sb.toString();
         System.out.println(commit);
         this.commitID = getSHA1(commit.getBytes());
+        System.out.println("HASH OF PREVIOUS COMMIT WAS: " + this.commitID);
         Repository.addObjectToObjectDirectory(commitID, commit);
+    }
+
+    public static String getSnapshotID (String id) {
+        return getCommitText(id).split(" ")[1].split("\n")[0];
+    }
+
+    public static String getCommitText(String id) {
+        File currentCommit = join(Repository.OBJECTS_DIR, id);
+        return fileContentsToString(currentCommit);
+    }
+
+    public static String getParentID(String id) {
+        return getCommitText(id).split("\n")[1].split(" ")[1];
     }
 
     public String getCommitID() {
@@ -38,4 +53,5 @@ public class Commit {
     public String getSnapshotID() {
         return this.treeID;
     }
+
 }

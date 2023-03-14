@@ -30,6 +30,7 @@ public class Repository {
     public static final Integer CONFLICT_BASE = 1;
     public static final Integer CONFLICT_RECEIVER = 2;
     public static final Integer CONFLICT_GIVER = 3;
+    public static final String EMPTY_FILE_ID = getSHA1("");
     public static final File CWD = new File(System.getProperty("user.dir"));
     public static final File GITFLY_DIR = join(CWD, ".gitfly");
     public static final File HEAD = join(GITFLY_DIR, "HEAD");
@@ -63,7 +64,7 @@ public class Repository {
         addObjectToObjectDirectory(emptyTreeID, "");
         String initialCommitID = initCommit();
         initBranch("master", initialCommitID);
-        System.out.println("SNAPSHOT: " + getCurrentSnapshotID() + "g");
+        System.out.println("SNAPSHOT: " + Commit.getSnapshotID(getCurrentCommitID()) + "g");
 
         exit("Initialized empty gitfly repository in %s", CWD.getPath());
     }
@@ -81,6 +82,32 @@ public class Repository {
         writeContents(branch_file, commitID);
     }
 
+    public static void branch(String branch_name) {
+        File branch_file = join(HEADS_DIR, branch_name);
+        if (branch_file.exists()) {
+            exit("A branch called %s already exists", branch_name);
+        } else {
+            try {
+                if (branch_file.createNewFile()) {
+                    exit("Created an empty branch called %s", branch_name);
+                }
+            } catch (IOException e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public static void rm_branch(String branch_name) {
+        File branch_file = join(HEADS_DIR, branch_name);
+        if (!branch_file.exists()) {
+            exit("There is no branch called %s", branch_name);
+        } else {
+            if (branch_file.delete()) {
+                exit("Successfully deleted branch %s", branch_name);
+            }
+        }
+    }
+
     private static String getCurrentCommitID() {
         String head = fileContentsToString(HEAD);
         String[] head_split = head.split(" ");
@@ -90,7 +117,7 @@ public class Repository {
     }
 
     private static String initCommit() {
-        Commit initialCommit = new Commit("Initial commit", getSHA1(""), null);
+        Commit initialCommit = new Commit("Initial commit", EMPTY_FILE_ID, null);
         return initialCommit.getCommitID();
     }
 
@@ -149,24 +176,6 @@ public class Repository {
             if (Stage.isInToRemove(filepath)) {
                 Stage.removeFromToRemove(filepath);
             }
-//            if (!oldBlobHash.equals(blob.getID())) {
-//                Stage.removeFromIndex(filepath, NOT_CONFLICT);
-//            }
-//            Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
-//
-//            if (oldBlobHash == null || !oldBlobHash.equals(blob.getID())) {
-//                Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
-//                if (Stage.getFromToAdd(filepath) == null || !Stage.getFromToAdd(filepath).equals(newBlobHash)) {
-//                    Stage.addToToAdd(filepath, newBlobHash);
-//                }
-//                if (Stage.isInToRemove(filepath)) {
-//                    Stage.removeFromToRemove(filepath);
-//                }
-//            } else {
-//                if (Stage.getFromToAdd(filepath) != null) {
-//                    Stage.removeFromToAdd(filepath);
-//                }
-//            }
         }
         Stage.writeAll();
     }
@@ -209,18 +218,13 @@ public class Repository {
 
     public static void commit(String message) {
         Stage.readAll();
-        String buildTree = buildUpdatedTree(CWD, getCurrentSnapshotID(), Stage.TO_ADD_FILES, Stage.TO_REMOVE_FILES);
+        String buildTree = buildUpdatedTree(CWD, Commit.getSnapshotID(getCurrentCommitID()), Stage.TO_ADD_FILES, Stage.TO_REMOVE_FILES);
         Commit commit = new Commit(message, buildTree, getCurrentCommitID());
         updateCurrentBranch(commit.getCommitID());
         Stage.clear();
         Stage.writeAll();
     }
 
-    public static String getCurrentSnapshotID() {
-        File currentCommit = join(OBJECTS_DIR, getCurrentCommitID());
-        String commitContent = fileContentsToString(currentCommit);
-        return commitContent.split(" ")[1].split("\n")[0];
-    }
     private static void updateCurrentBranch(String newCommitID) {
         String head = fileContentsToString(HEAD);
         String[] head_split = head.split(" ");
@@ -338,5 +342,14 @@ public class Repository {
 
     private static void removeFilesFromDirectory(HashSet<String> st, String filename) {
         st.removeIf(element -> element.startsWith(filename + "/"));
+    }
+
+    public static void log() {
+        String currentCommitID = getCurrentCommitID();
+        do {
+            System.out.println(Commit.getCommitText(currentCommitID));
+            currentCommitID = Commit.getParentID(currentCommitID);
+            System.out.println("==================================");
+        } while (!currentCommitID.equals("null"));
     }
 }

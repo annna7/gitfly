@@ -2,6 +2,7 @@ package gitfly;
 import static gitfly.Utils.*;
 import gitfly.Repository;
 
+import java.awt.image.ReplicateScaleFilter;
 import java.io.IOException;
 
 public class Main {
@@ -32,7 +33,20 @@ public class Main {
                 Repository.checkIfGitflyInitialized();
                 Repository.commit(commandArgs[0]);
                 break;
-
+            case "log":
+                Repository.checkIfGitflyInitialized();
+                checkNumberOfArguments(commandArgs, 0);
+                Repository.log();
+                break;
+            case "branch":
+                Repository.checkIfGitflyInitialized();
+                checkNumberOfArguments(commandArgs, 1);
+                Repository.branch(commandArgs[0]);
+                break;
+            case "rm-branch":
+                Repository.checkIfGitflyInitialized();
+                checkNumberOfArguments(commandArgs, 1);
+                Repository.rm_branch(commandArgs[0]);
             default:
                 exit("Unknown command: %s", commandName);
         }

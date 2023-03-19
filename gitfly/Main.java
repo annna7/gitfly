@@ -47,6 +47,16 @@ public class Main {
                 Repository.checkIfGitflyInitialized();
                 checkNumberOfArguments(commandArgs, 1);
                 Repository.rm_branch(commandArgs[0]);
+                break;
+            case "checkout":
+                Repository.checkIfGitflyInitialized();
+                Repository.checkout(commandArgs[0]);
+                break;
+            case "status":
+                Repository.checkIfGitflyInitialized();
+                checkNumberOfArguments(commandArgs, 0);
+                Repository.status();
+                break;
             default:
                 exit("Unknown command: %s", commandName);
         }

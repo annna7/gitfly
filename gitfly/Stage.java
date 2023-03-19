@@ -9,7 +9,7 @@ import static gitfly.Utils.join;
 import static gitfly.Utils.writeContents;
 
 public class Stage {
-    private static class NameAndStatus implements Serializable{
+    static class NameAndStatus implements Serializable{
         public String name;
         public Integer status;
         public NameAndStatus(String name, Integer status) {
@@ -83,8 +83,6 @@ public class Stage {
             ObjectInputStream ois = new ObjectInputStream(fis);
             Object o = ois.readObject();
             INDEX_FILES = o == null ? new HashMap<>() : (HashMap<NameAndStatus, String>) o;
-            // INDEX_FILES = (HashMap<NameAndStatus, String>) ois.readObject();
-            System.out.println("INDEX FILES: " + INDEX_FILES);
             ois.close();
             fis.close();
         } catch (EOFException ignored) {
@@ -99,7 +97,6 @@ public class Stage {
             ObjectInputStream ois = new ObjectInputStream(fis);
             Object o = ois.readObject();
             TO_ADD_FILES = o == null ? new HashMap<>() : (HashMap<String, String>) o;
-            System.out.println("TO ADD FILES: " + TO_ADD_FILES);
             ois.close();
             fis.close();
         } catch (EOFException ignored) {
@@ -115,7 +112,6 @@ public class Stage {
             ObjectInputStream ois = new ObjectInputStream(fis);
             Object o = ois.readObject();
             TO_REMOVE_FILES = o == null ? new HashSet<>() : (HashSet<String>) o;
-            System.out.println("TO REMOVE FILES: " + TO_REMOVE_FILES);
             ois.close();
             fis.close();
         } catch (EOFException ignored) {
@@ -188,4 +184,19 @@ public class Stage {
     public static void clearToRemove() {
         TO_REMOVE_FILES.clear();
     }
+
+    public static HashMap<String, String> getIndexContents() {
+        readIndex();
+        HashMap<String, String> contents = new HashMap<>();
+        for (NameAndStatus key : INDEX_FILES.keySet()) {
+            contents.put(key.name, INDEX_FILES.get(key));
+        }
+        return contents;
+    }
+
+    public static void updateIndex(HashMap<NameAndStatus, String> newContents) {
+        INDEX_FILES = newContents;
+        writeIndex();
+    }
 }
+

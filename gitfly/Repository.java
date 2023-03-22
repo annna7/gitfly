@@ -4,6 +4,7 @@ import static gitfly.Utils.*;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.util.*;
 
 public class Repository {
@@ -41,11 +42,13 @@ public class Repository {
     public static final File REFS_DIR = join(GITFLY_DIR, "refs");
     public static final File HEADS_DIR = join(REFS_DIR, "heads");
     public static final File TAGS_DIR = join(REFS_DIR, "tags");
+    public static final File MERGE_HEAD = join(GITFLY_DIR, "MERGE_HEAD");
     public static final Character MODIFY = 'M';
     public static final Character ADD = 'A';
     public static final Character REMOVE = 'R';
     public static final Character CONFLICT = 'C';
     public static final Character SAME = 'S';
+    public static String INITIAL_COMMIT_ID;
 
     public static final HashMap<Character, String> STATUS_CODE = new HashMap<Character, String>() {{
         put(MODIFY, "Modified: ");
@@ -55,12 +58,12 @@ public class Repository {
         put(SAME, "Same: ");
     }};
 
-    private static class FileStatus {
+    public static class FileStatus {
         public Character status;
         public String receiver;
         public String giver;
         public String base;
-        private FileStatus(String receiver, String giver, String base) {
+        public FileStatus(String receiver, String giver, String base) {
             this.status = fileStatus(receiver, giver, base);
             this.receiver = receiver;
             this.giver = giver;
@@ -78,6 +81,8 @@ public class Repository {
         public String getReceiver() {
             return receiver;
         }
+        public String getBase() { return base; }
+        public String getGiver() { return giver; }
     }
 
     public static void init() throws IOException {
@@ -173,102 +178,12 @@ public class Repository {
             System.out.println(STATUS_CODE.get(changesNotStagedForCommit.get(s)) + " " + s);
         }
         System.out.println("====================");
-    }
-
-    /**
-     * Returns whether a given file is SAME, ADDED, REMOVED, MODIFIED OR IN CONFLICT.
-     */
-    public static Character fileStatus(String receiver, String giver, String base) {
-        if (giver == null && receiver == null) {
-            return SAME;
-        }
-        if (giver == null) {
-            return ADD;
-        }
-        if (receiver == null) {
-            return REMOVE;
-        }
-        if (giver.equals(receiver)) {
-            return SAME;
-        }
-        return MODIFY;
-    }
-
-    // Computes diff between repository in two different states
-    // state1 - the state of the repository before the change
-    // if null, then the state represents the index, else a commit id
-    // state2 - the state of the repository after the change
-    // if null, then the state represents the working directory, else a commit id
-    public static HashMap<String, FileStatus> diff(String giver, String receiver, String base) {
-        HashMap<String, String> giverContents = giver == null ? Stage.getIndexContents() : getCommitContents(giver);
-        HashMap<String, String> receiverContents = new HashMap<>();
-        if (receiver == null) {
-            receiverContents = getWorkingDirectoryContents();
-        } else {
-            receiverContents = receiver.equals("INDEX") ? Stage.getIndexContents() : getCommitContents(receiver);
-        }
-        HashMap<String, FileStatus> diffResult = new HashMap<>();
-        // not in merge state
-        // probabil fix la fel si in merge state tho
-        if (base == null) {
-            for (String key : receiverContents.keySet()) {
-                diffResult.put(key, new FileStatus(receiverContents.getOrDefault(key, null), giverContents.getOrDefault(key, null), null));
+        HashSet<String> filesInConflict = getFilesInConflict();
+        if (filesInConflict.size() > 0) {
+            System.out.println("Files in conflict: ");
+            for (String fileInConflict : filesInConflict) {
+                System.out.println(fileInConflict);
             }
-            for (String key : giverContents.keySet()) {
-                if (!diffResult.containsKey(key)) {
-                    diffResult.put(key, new FileStatus(receiverContents.getOrDefault(key, null), giverContents.getOrDefault(key, null), null));
-                }
-            }
-        }
-        return diffResult;
-    }
-
-    public static void checkoutToCommit(String commitID) {
-        HashMap<String, FileStatus> diffResult = diff(null, commitID, null);
-        // Check if there are files that are changed in the working directory and different in HEAD commit and commit to check out to
-        // If there are, abort checkout because those changes would be lost
-//        HashSet<String> filesThatWouldBeOverwritten = getFilesCommitWouldOverwrite(commitID);
-//        if (!filesThatWouldBeOverwritten.isEmpty()) {
-//            exit("There are files that would be overwritten by checkout.");
-//        }
-        // Modify the working directory to match the files in the given commit ID
-        HashMap<String, FileStatus> writeToWorkingCopy = diff(getCurrentCommitID(), commitID,null);
-        for (String key : writeToWorkingCopy.keySet()) {
-            if (writeToWorkingCopy.get(key).getStatus() == ADD || writeToWorkingCopy.get(key).getStatus() == MODIFY) {
-                writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getReceiver())));
-            } else if (writeToWorkingCopy.get(key).getStatus() == REMOVE) {
-                join(CWD, key).delete();
-            }
-        }
-        // update the index to match the files in the given commit ID
-        Stage.updateIndex(getIndexContent(commitID));
-    }
-
-    /**
-     * Changes the index, working copy and HEAD to reflect the content of {argument}
-     * Two cases:
-     * 1. Receives branch name
-     * 2. Receives commit ID => DETACHED HEAD state
-     * @param argument branch name or commit id
-     */
-    public static void checkout(String argument) {
-        if (isBranchName(argument)) {
-            if (getCurrentBranchName() != null && argument.equals(getCurrentBranchName())) {
-                exit("No need to checkout the current branch.");
-            }
-            checkoutToCommit(getCommitOfBranch(argument));
-            modifyHEAD("ref: refs/heads/" + argument);
-            exit("Switched out to %s\n", argument);
-        } else if (isCommitID(argument)) {
-            System.out.println("DETACHED HEAD STATE\n");
-            if (argument.equals(fileContentsToString(HEAD))) {
-                exit("[DETACHED HEAD STATE]\nNo need to checkout the current commit.");
-            }
-            checkoutToCommit(argument);
-            modifyHEAD(argument);
-            exit("Note: checking out to %s\nYou are in detached HEAD state", argument);
-        } else {
-            exit("Not a branch name or a commit id: %s", argument);
         }
     }
 
@@ -304,9 +219,14 @@ public class Repository {
     }
 
     public static HashMap<String, Character> getChangesNotStagedForCommit() {
+        // difference between working directory and index
         HashMap<String, Character> changesNotStagedForCommit = new HashMap<>();
         HashMap<String, FileStatus> changesFromIndexToWorkingCopy = diff(null, null, null);
-        return getStringCharacterHashMap(changesNotStagedForCommit, (HashMap<String, FileStatus>) changesFromIndexToWorkingCopy);
+        System.out.println("INDEX CONTENTS:\n");
+        printHashMap(Stage.getIndexContents());
+        System.out.println("WORKING DIRECTORY CONTENTS:\n");
+        printHashMap(getWorkingDirectoryContents());
+        return getStringCharacterHashMap(changesNotStagedForCommit, changesFromIndexToWorkingCopy);
     }
 
     private static HashMap<String, Character> getStringCharacterHashMap(HashMap<String, Character> changesNotStagedForCommit, HashMap<String, FileStatus> changesFromIndexToWorkingCopy) {
@@ -326,6 +246,7 @@ public class Repository {
         }
         return fileContentsToString(commitFile).split("\n")[1].split(" ")[0].equals("parent");
     }
+
 
     private static HashMap<Stage.NameAndStatus, String> getIndexContent(String commitID) {
         HashMap<Stage.NameAndStatus, String> indexContent = new HashMap<>();
@@ -359,7 +280,7 @@ public class Repository {
         }
         return result;
     }
-    private static void printHashMap(HashMap<String, String> h) {
+    public static void printHashMap(HashMap<String, String> h) {
         for (String key : h.keySet()) {
             System.out.println(key + " " + h.get(key));
         }
@@ -424,7 +345,7 @@ public class Repository {
         return branch_file.exists();
     }
 
-    private static String getCurrentCommitID() {
+    public static String getCurrentCommitID() {
         String head = fileContentsToString(HEAD);
         if (head.startsWith("ref")) {
             String[] head_split = head.split(" ");
@@ -437,7 +358,304 @@ public class Repository {
 
     private static String initCommit() {
         Commit initialCommit = new Commit("Initial commit", EMPTY_FILE_ID, null);
+        Repository.INITIAL_COMMIT_ID = initialCommit.getCommitID();
         return initialCommit.getCommitID();
+    }
+
+    /**
+     * Returns whether a given file is SAME, ADDED, REMOVED, MODIFIED OR IN CONFLICT.
+     */
+    public static Character fileStatus(String receiver, String giver, String base) {
+        /*if (receiver == null && giver == null) {
+            return SAME;
+        }
+        if (receiver != null && giver != null && !receiver.equals(giver)) {
+            if (!receiver.equals(base) && !giver.equals(base)) {
+                return CONFLICT;
+            } else {
+                return MODIFY;
+            }
+        }
+        if (receiver != null && receiver.equals(giver)) {
+            return SAME;
+        }
+        if (giver != null && base == null){
+            return ADD;
+        }
+        return REMOVE;
+
+         */
+
+        if (receiver == null && giver == null) {
+            if (base == null) {
+                return SAME;
+            } else {
+                return REMOVE;
+            }
+        }
+        if (receiver != null && giver != null) {
+            if (receiver.equals(giver)) {
+                return SAME;
+            } else if (!receiver.equals(giver)) {
+                if (!receiver.equals(base) && !giver.equals(base)) {
+                    return CONFLICT;
+                } else {
+                    return MODIFY;
+                }
+            }
+        }
+        return ADD;
+
+//        if (giver == null && receiver == null) {
+//            return SAME;
+//        }
+//        if (giver == null) {
+//            return ADD;
+//        }
+//        if (receiver == null) {
+//            return REMOVE;
+//        }
+//        if (giver.equals(receiver)) {
+//            return SAME;
+//        }
+//        return MODIFY;
+    }
+
+    // Computes diff between repository in two different states
+    // state1 - the state of the repository before the change
+    // if null, then the state represents the index, else a commit id
+    // state2 - the state of the repository after the change
+    // if null, then the state represents the working directory, else a commit id
+    public static HashMap<String, FileStatus> diff(String giver, String receiver, String base) {
+        HashMap<String, String> giverContents = giver == null ? Stage.getIndexContents() : getCommitContents(giver);
+        HashMap<String, String> receiverContents;
+        if (receiver == null) {
+            receiverContents = getWorkingDirectoryContents();
+        } else {
+            receiverContents = receiver.equals("INDEX") ? Stage.getIndexContents() : getCommitContents(receiver);
+        }
+        HashMap<String, String> baseContents = base == null ? receiverContents : getCommitContents(base);
+        HashMap<String, FileStatus> diffResult = new HashMap<>();
+        Set<String> allKeys = new HashSet<>(receiverContents.keySet());
+        allKeys.addAll(giverContents.keySet());
+        allKeys.addAll(baseContents.keySet());
+
+//        if (base == null) {
+//            for (String key : receiverContents.keySet()) {
+//                diffResult.put(key, new FileStatus(receiverContents.getOrDefault(key, null), giverContents.getOrDefault(key, null), null));
+//            }
+//            for (String key : giverContents.keySet()) {
+//                if (!diffResult.containsKey(key)) {
+//                    diffResult.put(key, new FileStatus(receiverContents.getOrDefault(key, null), giverContents.getOrDefault(key, null), null));
+//                }
+//            }
+//        }
+        for (String key : allKeys) {
+            diffResult.put(key, new FileStatus(receiverContents.getOrDefault(key, null), giverContents.getOrDefault(key, null), baseContents.getOrDefault(key, null)));
+        }
+        return diffResult;
+    }
+
+    public static String getContentOfConflictedFile(String giverID, String receiverID) {
+        return "<<<<<<< HEAD\n" + fileContentsToString(join(OBJECTS_DIR, receiverID)) +
+                "=======\n" +
+                fileContentsToString(join(OBJECTS_DIR, giverID)) +
+                ">>>>>>> branch\n";
+    }
+
+    public static void writeToWorkingCopyForMerge(String giver, String receiver, String base) {
+        HashMap<String, FileStatus> writeToWorkingCopy = diff(giver, receiver, base);
+        for (String key : writeToWorkingCopy.keySet()) {
+            if (writeToWorkingCopy.get(key).getStatus() == MODIFY) {
+                writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getReceiver())));
+            } else if (writeToWorkingCopy.get(key).getStatus() == REMOVE) {
+                join(CWD, key).delete();
+            } else if (writeToWorkingCopy.get(key).getStatus() == ADD) {
+                if (writeToWorkingCopy.get(key).getReceiver() != null) {
+                    writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getReceiver())));
+                } else {
+                    writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getGiver())));
+                }
+            } else if (writeToWorkingCopy.get(key).getStatus() == CONFLICT) {
+                writeContents(join(CWD, key), getContentOfConflictedFile(writeToWorkingCopy.get(key).getGiver(), writeToWorkingCopy.get(key).getReceiver()));
+            }
+        }
+    }
+
+    public static void checkoutToCommit(String commitID) {
+        HashMap<String, FileStatus> diffResult = diff(null, commitID, null);
+        // Check if there are files that are changed in the working directory and different in HEAD commit and commit to check out to
+        // If there are, abort checkout because those changes would be lost
+//        HashSet<String> filesThatWouldBeOverwritten = getFilesCommitWouldOverwrite(commitID);
+//        if (!filesThatWouldBeOverwritten.isEmpty()) {
+//            exit("There are files that would be overwritten by checkout.");
+//        }
+        // Modify the working directory to match the files in the given commit ID
+        // writeToWorkingCopy(getCurrentCommitID(), commitID, null);
+        HashMap<String, FileStatus> writeToWorkingCopy = diff(getCurrentCommitID(), commitID,null);
+        for (String key : writeToWorkingCopy.keySet()) {
+            if (writeToWorkingCopy.get(key).getStatus() == MODIFY) {
+                writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getReceiver())));
+            } else if (writeToWorkingCopy.get(key).getStatus() == REMOVE) {
+                join(CWD, key).delete();
+            } else if (writeToWorkingCopy.get(key).getStatus() == ADD) {
+                if (writeToWorkingCopy.get(key).getReceiver() != null) {
+                    writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getReceiver())));
+                } else {
+                    writeContents(join(CWD, key), fileContentsToString(join(OBJECTS_DIR, writeToWorkingCopy.get(key).getGiver())));
+                }
+            }
+        }
+
+        // update the index to match the files in the given commit ID
+        Stage.updateIndex(getIndexContent(commitID));
+    }
+
+    /**
+     * Changes the index, working copy and HEAD to reflect the content of {argument}
+     * Two cases:
+     * 1. Receives branch name
+     * 2. Receives commit ID => DETACHED HEAD state
+     * @param argument branch name or commit id
+     */
+    public static void checkout(String argument) {
+        if (MERGE_HEAD.exists()) {
+            exit("Cannot perform this command until the merge conflict has been resolved.");
+        }
+        if (isBranchName(argument)) {
+            if (getCurrentBranchName() != null && argument.equals(getCurrentBranchName())) {
+                exit("No need to checkout the current branch.");
+            }
+            checkoutToCommit(getCommitOfBranch(argument));
+            modifyHEAD("ref: refs/heads/" + argument);
+            exit("Switched out to %s\n", argument);
+        } else if (isCommitID(argument)) {
+            System.out.println("DETACHED HEAD STATE\n");
+            if (argument.equals(fileContentsToString(HEAD))) {
+                exit("[DETACHED HEAD STATE]\nNo need to checkout the current commit.");
+            }
+            checkoutToCommit(argument);
+            modifyHEAD(argument);
+            exit("Note: checking out to %s\nYou are in detached HEAD state", argument);
+        } else {
+            exit("Not a branch name or a commit id: %s", argument);
+        }
+    }
+
+    public static void merge(String giver) {
+        if (detachedHeadState()) {
+            exit("Merges are unsupported in detached head state");
+        }
+        String receiverID = getCurrentCommitID();
+        if (!isBranchName(giver)) {
+            exit("Branch %s doesn't exist.", giver);
+        }
+        String giverID = getCommitIDOfBranch(giver);
+        if (giverID.equals(receiverID)) {
+            exit("Cannot merge a branch with itself.");
+        }
+        if (isAncestor(giverID, receiverID)) {
+            exit("Already up-to-date.");
+        }
+        if (isAncestor(receiverID, giverID)) {
+            checkoutToCommit(giverID);
+            File receiver_branch = join(HEADS_DIR, getCurrentBranchName());
+            writeContents(receiver_branch, getCommitIDOfBranch(giver));
+            exit("Fast-forwarded.");
+        }
+        if (MERGE_HEAD.exists()) {
+            exit("Merge already happening.");
+        }
+        try {
+            MERGE_HEAD.createNewFile();
+        } catch (IOException e) {
+            exit("Error creating MERGE_HEAD file.");
+        }
+        writeContents(MERGE_HEAD, giverID);
+        String baseID = getLCA(giverID, receiverID);
+        HashMap<String, FileStatus> diffResult = diff(giverID, receiverID, baseID);
+
+        writeToWorkingCopyForMerge(giverID, receiverID, baseID);
+
+        Stage.updateIndexFromDiff(diffResult);
+
+        HashSet<String> filesInConflict = getFilesInConflict(diffResult);
+
+        if (filesInConflict.isEmpty()) {
+            String commitMessage = "Merged " + giver + " into " + getCurrentBranchName() + ".";
+            String newTreeID = buildUpdatedTree(CWD, EMPTY_FILE_ID, getWorkingDirectoryContents(), null);
+            Commit newCommit = new Commit(commitMessage, newTreeID, giverID);
+            MERGE_HEAD.delete();
+            updateCurrentBranch(newCommit.getCommitID());
+            // createCommit(commitMessage, receiverID);
+            exit("Merged %s into %s.", giver, getCurrentBranchName());
+        } else {
+            exit("Encountered a merge conflict.\nThe following files are in conflict:\n%s", filesInConflict.toString().replace("[", "").replace("]", ""));
+        }
+    }
+    public static HashSet<String> getFilesInConflict() {
+        HashMap<Stage.NameAndStatus, String> indexFiles = Stage.getIndexFiles();
+        HashSet<String> filesInConflict = new HashSet<>();
+        for (Stage.NameAndStatus nameAndStatus : indexFiles.keySet()) {
+            if (nameAndStatus.getStatus() != 0) {
+                filesInConflict.add(nameAndStatus.getName());
+            }
+        }
+        return filesInConflict;
+    }
+
+    public static HashSet<String> getFilesInConflict(HashMap<String, FileStatus> files) {
+        HashSet<String> filesInConflict = new HashSet<>();
+        for (String filename : files.keySet()) {
+            if (files.get(filename).getStatus() == CONFLICT) {
+                filesInConflict.add(filename);
+            }
+        }
+        return filesInConflict;
+    }
+
+    // Find what commit is higher in the commit tree.
+    // Traverse the two arrays simultaneously until a common commit is found.
+    // Complexity of both reading ancestors and solving query is linear in terms of the commit tree height.
+    public static String getLCA(String commit1, String commit2) {
+        ArrayList<String> ancestors1 = getAncestorsOfCommit(commit1);
+        ArrayList<String> ancestors2 = getAncestorsOfCommit(commit2);
+        int minNodeIndex = Math.min(ancestors1.size(), ancestors2.size());
+        for (int i = minNodeIndex - 1; i >= 0; --i) {
+            if (ancestors1.get(i).equals(ancestors2.get(i))) {
+                return ancestors1.get(i);
+            }
+        }
+        return null;
+//        for (String ancestor : ancestors1) {
+//            if (ancestors2.contains(ancestor)) {
+//                return ancestor;
+//            }
+//        }
+//        return null;
+    }
+
+    public static boolean isAncestor(String childID, String parentID) {
+        return getAncestorsOfCommit(parentID).contains(childID);
+    }
+
+    public static ArrayList<String> getAncestorsOfCommit(String commitID) {
+        ArrayList<String> ancestors = new ArrayList<>();
+        String currentCommitID = commitID;
+        while (!currentCommitID.equals("null")) {
+            ancestors.add(currentCommitID);
+            currentCommitID = Commit.getParentID(currentCommitID);
+        }
+        return ancestors;
+    }
+
+    public static String getCommitIDOfBranch(String branch) {
+        File branch_file = join(HEADS_DIR, branch);
+        return fileContentsToString(branch_file);
+    }
+
+    private static boolean detachedHeadState() {
+        return !fileContentsToString(HEAD).startsWith("ref");
     }
 
     /**
@@ -472,23 +690,60 @@ public class Repository {
             // Daca exista in index cu valoarea corecta, atunci scoate-l din TO_ADD daca exista.
             String filepath = blob.getRelativePath();
             String newBlobHash = blob.getID();
-            String oldBlobHash = Stage.getFromIndex(NOT_CONFLICT, filepath);
+            ArrayList<String> oldBlobHashes = new ArrayList<String>(Arrays.asList(Stage.getFromIndex(NOT_CONFLICT, filepath), Stage.getFromIndex(CONFLICT_BASE, filepath), Stage.getFromIndex(CONFLICT_GIVER, filepath), Stage.getFromIndex(CONFLICT_RECEIVER, filepath)));
+            // OLD :String oldBlobHash = Stage.getFromIndex(NOT_CONFLICT, filepath);
             // daca este in index cu o alta valoare atunci o suprascriu
             // daca este deja in index cu valoarea corecta nu mai fac nimic
-            if (oldBlobHash == null || !oldBlobHash.equals(blob.getID())) {
-                // Daca este in index cu o alta valoare, atunci o suprascriu
-                if (oldBlobHash != null) {
+
+            // CHECK IF MERGE CONFLICT EXISTS
+            if (oldBlobHashes.get(1) != null || oldBlobHashes.get(2) != null || oldBlobHashes.get(3) != null) {
+                Stage.readIndex();
+                Stage.removeFromIndex(filepath, CONFLICT_BASE);
+                Stage.removeFromIndex(filepath, CONFLICT_GIVER);
+                Stage.removeFromIndex(filepath, CONFLICT_RECEIVER);
+                Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
+                Stage.writeIndex();
+            } else if (oldBlobHashes.get(0) == null || !oldBlobHashes.get(0).equals(newBlobHash)) {
+                if (oldBlobHashes.get(0) != null) {
+                    Stage.readIndex();
                     Stage.removeFromIndex(filepath, NOT_CONFLICT);
+                    Stage.writeIndex();
                 }
                 Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
             }
+            /*else {
+                // MERGE CONFLICT DETECTED
+                if (oldBlobHashes.get(1) != null || oldBlobHashes.get(2) != null || oldBlobHashes.get(3) != null) {
+                    Stage.readIndex();
+                    Stage.removeFromIndex(filepath, CONFLICT_BASE);
+                    Stage.removeFromIndex(filepath, CONFLICT_GIVER);
+                    Stage.removeFromIndex(filepath, CONFLICT_RECEIVER);
+                    Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
+                    Stage.writeIndex();
+                }
+            }
+             */
+//            if (oldBlobHash == null || !oldBlobHash.equals(blob.getID())) {
+//                // Daca este in index cu o alta valoare, atunci o suprascriu
+//                if (oldBlobHash != null) {
+//                    Stage.readIndex();
+//                    Stage.removeFromIndex(filepath, NOT_CONFLICT);
+//                    Stage.writeIndex();
+//                }
+//                Stage.addToIndex(filepath, NOT_CONFLICT, newBlobHash);
+//            }
+
             // Acum se afla in index cu valoarea corecta
             // Daca este in TO_ADD cu o alta valoare, atunci o suprascriu
             if (Stage.getFromToAdd(filepath) == null || !Stage.getFromToAdd(filepath).equals(newBlobHash)) {
                 if (Stage.getFromToAdd(filepath) != null) {
+                    Stage.readAll();
                     Stage.removeFromToAdd(filepath);
+                    Stage.writeAll();
                 }
+                Stage.readAll();
                 Stage.addToToAdd(filepath, newBlobHash);
+                Stage.writeAll();
             }
             // Acum se afla in TO_ADD cu valoarea corecta
             // Daca se afla in TO_REMOVE, atunci o sterg
@@ -512,18 +767,37 @@ public class Repository {
     public static void rm(String ...paths) {
         Stage.readAll();
         for (String path : paths) {
-            if (Stage.getFromIndex(NOT_CONFLICT, path) != null) {
-                System.out.println(path + " got deleted");
+            ArrayList<String> oldBlobHashes = new ArrayList<String>(Arrays.asList(Stage.getFromIndex(NOT_CONFLICT, path), Stage.getFromIndex(CONFLICT_BASE, path), Stage.getFromIndex(CONFLICT_GIVER, path), Stage.getFromIndex(CONFLICT_RECEIVER, path)));
+            if (oldBlobHashes.get(0) != null || oldBlobHashes.get(1) != null || oldBlobHashes.get(2) != null || oldBlobHashes.get(3) != null) {
+                Stage.readIndex();
                 Stage.removeFromIndex(path, NOT_CONFLICT);
+                Stage.removeFromIndex(path, CONFLICT_BASE);
+                Stage.removeFromIndex(path, CONFLICT_GIVER);
+                Stage.removeFromIndex(path, CONFLICT_RECEIVER);
+                Stage.writeIndex();
+                System.out.println(path + " got removed from index");
                 Stage.addToToRemove(path);
                 if (Stage.getFromToAdd(path) != null) {
                     Stage.removeFromToAdd(path);
                 }
                 File file = getFile(String.valueOf(CWD), path);
-                if (file != null) {
-                    file.delete();
+                if (file != null && file.delete()) {
+                    System.out.println(path + " got deleted from disk");
                 }
-            } else {
+            }
+//            if (Stage.getFromIndex(NOT_CONFLICT, path) != null) {
+//                System.out.println(path + " got deleted");
+//                Stage.removeFromIndex(path, NOT_CONFLICT);
+//                Stage.addToToRemove(path);
+//                if (Stage.getFromToAdd(path) != null) {
+//                    Stage.removeFromToAdd(path);
+//                }
+//                File file = getFile(String.valueOf(CWD), path);
+//                if (file != null) {
+//                    file.delete();
+//                }
+//        }
+             else {
                 System.out.println("No reason to remove the file.");
             }
         }
@@ -536,31 +810,50 @@ public class Repository {
     }
 
     public static void commit(String message) {
+        HashSet<String> filesInConflict = getFilesInConflict();
+        if (filesInConflict.size() > 0) {
+            exit("Cannot perform this command until the merge conflict has been resolved.");
+        }
+        createCommit(message, getCurrentCommitID());
+//        Stage.readAll();
+//        String buildTree = buildUpdatedTree(CWD, Commit.getSnapshotID(getCurrentCommitID()), Stage.TO_ADD_FILES, Stage.TO_REMOVE_FILES);
+//        Commit commit = new Commit(message, buildTree, getCurrentCommitID());
+//        updateCurrentBranch(commit.getCommitID());
+//        Stage.clear();
+//        Stage.writeAll();
+    }
+
+    public static void createCommit(String message, String commitID) {
         Stage.readAll();
-        String buildTree = buildUpdatedTree(CWD, Commit.getSnapshotID(getCurrentCommitID()), Stage.TO_ADD_FILES, Stage.TO_REMOVE_FILES);
-        Commit commit = new Commit(message, buildTree, getCurrentCommitID());
-        updateCurrentBranch(commit.getCommitID());
+        String buildTree = buildUpdatedTree(CWD, Commit.getSnapshotID(commitID), Stage.TO_ADD_FILES, Stage.TO_REMOVE_FILES);
+        if (MERGE_HEAD.exists()) {
+            Commit commit = new Commit(message + "\nResolved merge conflict.\n", buildTree, commitID);
+            File merge_head = join(GITFLY_DIR, "MERGE_HEAD");
+            merge_head.delete();
+            updateCurrentBranch(commit.getCommitID());
+        } else {
+            Commit commit = new Commit(message, buildTree, commitID);
+            updateCurrentBranch(commit.getCommitID());
+        }
         Stage.clear();
         Stage.writeAll();
     }
 
     private static void updateCurrentBranch(String newCommitID) {
-        String head = fileContentsToString(HEAD);
-        String[] head_split = head.split(" ");
-        File branch_file = join(GITFLY_DIR, head_split[1]);
-        writeContents(branch_file, newCommitID);
+        String name = getCurrentBranchName();
+        if (name == null) {
+            writeContents(HEAD, newCommitID);
+        } else {
+            File branch_file = join(GITFLY_DIR, "refs/heads/" + name);
+            writeContents(branch_file, newCommitID);
+        }
     }
 
     static String buildUpdatedTree(File currentDirectory, String oldTreeHash, HashMap<String, String> toAdd, HashSet <String> toRemove) {
         File oldTree = join(OBJECTS_DIR, oldTreeHash);
-        System.out.println(oldTreeHash);
-        System.out.println("oldTree: " + oldTree.getPath());
         String oldTreeContent = fileContentsToString(oldTree);
         StringBuilder newTreeContent = new StringBuilder();
-        System.out.println(oldTree.getPath());
-        System.out.println("toAdd: " + toAdd);
         if (!oldTreeContent.equals("")) {
-            System.out.println("oldTreeContent: " + oldTreeContent);
             for (String line : oldTreeContent.split("\n")) {
                 String type, hash, filename;
                 type = line.split(" ")[0];

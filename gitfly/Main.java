@@ -57,6 +57,19 @@ public class Main {
                 checkNumberOfArguments(commandArgs, 0);
                 Repository.status();
                 break;
+            case "merge":
+                Repository.checkIfGitflyInitialized();
+                checkNumberOfArguments(commandArgs, 1);
+                Repository.merge(commandArgs[0]);
+                break;
+            case "ancestors":
+                Repository.checkIfGitflyInitialized();
+                System.out.println(Repository.getAncestorsOfCommit(Repository.getCurrentCommitID()));
+                break;
+            case "printIndex":
+                Repository.checkIfGitflyInitialized();
+                Stage.printIndex();
+                break;
             default:
                 exit("Unknown command: %s", commandName);
         }

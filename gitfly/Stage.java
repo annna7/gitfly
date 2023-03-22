@@ -5,8 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 
-import static gitfly.Utils.join;
-import static gitfly.Utils.writeContents;
+import static gitfly.Utils.*;
 
 public class Stage {
     static class NameAndStatus implements Serializable{
@@ -34,6 +33,12 @@ public class Stage {
         public int hashCode() {
             return this.toString().hashCode();
         }
+        public String getName() {
+            return name;
+        }
+        public Integer getStatus() {
+            return status;
+        }
     }
     public static HashMap<String, String> TO_ADD_FILES = new HashMap<>();
     public static HashSet<String> TO_REMOVE_FILES = new HashSet<>();
@@ -50,6 +55,7 @@ public class Stage {
     }
 
     public static String getFromIndex(Integer status, String filename) {
+        readIndex();
         NameAndStatus nameAndStatus = new NameAndStatus(filename, status);
         return INDEX_FILES.getOrDefault(nameAndStatus, null);
     }
@@ -192,6 +198,41 @@ public class Stage {
             contents.put(key.name, INDEX_FILES.get(key));
         }
         return contents;
+    }
+
+    public static void updateIndexFromDiff(HashMap<String, Repository.FileStatus> files) {
+        INDEX_FILES = new HashMap<>();
+        for (String filename : files.keySet()) {
+            Repository.FileStatus status = files.get(filename);
+            if (status.getStatus().equals(Repository.CONFLICT)) {
+                readIndex();
+                addToIndex(filename, 1, status.getBase());
+                addToIndex(filename, 2, status.getGiver());
+                addToIndex(filename, 3, status.getReceiver());
+                writeIndex();
+            } else if (status.getStatus().equals(Repository.MODIFY)) {
+                readIndex();
+                addToIndex(filename, 0, status.getGiver());
+                writeIndex();
+            } else if (status.getStatus().equals(Repository.ADD) ||
+                    status.getStatus().equals(Repository.SAME)) {
+                readIndex();
+                addToIndex(filename, 0, status.getGiver() == null ? status.getReceiver() : status.getGiver());
+                writeIndex();
+            }
+        }
+    }
+
+    public static HashMap<NameAndStatus, String> getIndexFiles() {
+        Stage.readIndex();
+        return INDEX_FILES;
+    }
+
+    public static void printIndex() {
+        Stage.readIndex();
+        for (NameAndStatus key : INDEX_FILES.keySet()) {
+            System.out.println(key.name + " " + key.status + " " + INDEX_FILES.get(key));
+        }
     }
 
     public static void updateIndex(HashMap<NameAndStatus, String> newContents) {

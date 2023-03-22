@@ -2,9 +2,6 @@ package gitfly;
 
 import java.io.Serializable;
 import java.io.File;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.net.*;
 
 import static gitfly.Utils.*;
 

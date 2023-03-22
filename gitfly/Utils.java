@@ -170,32 +170,6 @@ public class Utils {
         }
     }
 
-    public static void getFileOccurrencesInIndex(File indexFile, String filePath, Integer status, String newContent) {
-        writeContents(indexFile, "1 2 3");
-        System.out.println(Arrays.toString(readContents(indexFile)));
-        String indexContents = fileContentsToString(indexFile);
-        String[] indexLines = indexContents.split("\n");
-        StringBuilder sb = new StringBuilder();
-        boolean found = false;
-        try {
-            for (String line : indexLines) {
-                String[] lineContents = line.split(" ");
-                if (lineContents[2].equals(filePath) && lineContents[0].equals(status.toString())) {
-                    lineContents[1] = newContent;
-                    line = String.join(" ", lineContents);
-                    found = true;
-                }
-                sb.append(line).append("\n");
-            }
-            if (!found) {
-                sb.append(status).append(" ").append(newContent).append(" ").append(filePath).append("\n");
-            }
-            writeContents(indexFile, sb.toString());
-        } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
-        }
-    }
-
     public static boolean isNormalFile(String path) {
         return !path.contains("/");
     }

@@ -1,16 +1,12 @@
 package gitfly;
 
 import java.io.*;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-
-import static gitfly.Utils.*;
-
-public class Stage {
+class Stage {
     static class NameAndStatus implements Serializable{
-        public String name;
-        public Integer status;
+        String name;
+        Integer status;
         public NameAndStatus(String name, Integer status) {
             this.name = name;
             this.status = status;
@@ -40,49 +36,49 @@ public class Stage {
             return status;
         }
     }
-    public static HashMap<String, String> TO_ADD_FILES = new HashMap<>();
-    public static HashSet<String> TO_REMOVE_FILES = new HashSet<>();
-    public static HashMap<NameAndStatus, String> INDEX_FILES = new HashMap<>();
+    static HashMap<String, String> TO_ADD_FILES = new HashMap<>();
+    static HashSet<String> TO_REMOVE_FILES = new HashSet<>();
+    private static HashMap<NameAndStatus, String> INDEX_FILES = new HashMap<>();
 
-    public static void addToIndex(String filename, Integer status, String contents) {
+    static void addToIndex(String filename, Integer status, String contents) {
         NameAndStatus nameAndStatus = new NameAndStatus(filename, status);
         INDEX_FILES.put(nameAndStatus, contents);
     }
 
-    public static void removeFromIndex(String filename, Integer status) {
+    static void removeFromIndex(String filename, Integer status) {
         NameAndStatus nameAndStatus = new NameAndStatus(filename, status);
         INDEX_FILES.remove(nameAndStatus);
     }
 
-    public static String getFromIndex(Integer status, String filename) {
+    static String getFromIndex(Integer status, String filename) {
         readIndex();
         NameAndStatus nameAndStatus = new NameAndStatus(filename, status);
         return INDEX_FILES.getOrDefault(nameAndStatus, null);
     }
 
-    public static String getFromToAdd(String filename) {
+    static String getFromToAdd(String filename) {
         return TO_ADD_FILES.getOrDefault(filename, null);
     }
 
-    public static void removeFromToAdd(String filename) {
+    static void removeFromToAdd(String filename) {
         TO_ADD_FILES.remove(filename);
     }
-    public static boolean isInToRemove(String filename) {
+    static boolean isInToRemove(String filename) {
         return TO_REMOVE_FILES.contains(filename);
     }
 
-    public static void removeFromToRemove(String filename) {
+    static void removeFromToRemove(String filename) {
         TO_REMOVE_FILES.remove(filename);
     }
 
-    public static void addToToAdd(String filename, String contents) {
+    static void addToToAdd(String filename, String contents) {
         TO_ADD_FILES.put(filename, contents);
     }
 
-    public static void addToToRemove(String filepath) {
+    static void addToToRemove(String filepath) {
         TO_REMOVE_FILES.add(filepath);
     }
-    public static void readIndex() {
+    static void readIndex() {
         try {
             File index = Repository.INDEX;
             FileInputStream fis = new FileInputStream(index);
@@ -96,7 +92,7 @@ public class Stage {
             System.out.println("Error read index: " + e);
         }
     }
-    public static void readFilesToBeAdded() {
+    static void readFilesToBeAdded() {
         try {
             File toAdd = Repository.TO_ADD;
             FileInputStream fis = new FileInputStream(toAdd);
@@ -111,7 +107,7 @@ public class Stage {
         }
     }
 
-    public static void readFilesToBeRemoved() {
+    static void readFilesToBeRemoved() {
         try {
             File toRemove = Repository.TO_REMOVE;
             FileInputStream fis = new FileInputStream(toRemove);
@@ -126,7 +122,7 @@ public class Stage {
         }
     }
 
-    public static void writeIndex() {
+    static void writeIndex() {
         try {
             File index = Repository.INDEX;
             FileOutputStream fos = new FileOutputStream(index);
@@ -139,7 +135,7 @@ public class Stage {
             System.out.println("Error: " + e);
         }
     }
-    public static void writeToAdd() {
+    static void writeToAdd() {
         try {
             File toAdd = Repository.TO_ADD;
             FileOutputStream fos = new FileOutputStream(toAdd);
@@ -153,7 +149,7 @@ public class Stage {
         }
     }
 
-    public static void writeToRemove() {
+    static void writeToRemove() {
         try {
             File toRemove = Repository.TO_REMOVE;
             FileOutputStream fos = new FileOutputStream(toRemove);
@@ -167,12 +163,12 @@ public class Stage {
         }
     }
 
-    public static void readAll() {
+    static void readAll() {
         readIndex();
         readFilesToBeAdded();
         readFilesToBeRemoved();
     }
-    public static void writeAll() {
+    static void writeAll() {
         writeIndex();
         writeToAdd();
         writeToRemove();

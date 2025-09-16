@@ -1,5 +1,7 @@
 # Gitfly
 
+Refactored version in **modern CPP**: https://github.com/annna7/gitfly-cpp
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Features](#features)
